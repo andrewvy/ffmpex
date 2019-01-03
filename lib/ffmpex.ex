@@ -84,7 +84,7 @@ defmodule FFmpex do
   * `:metadata_value` - Match streams with the given metadata value. Must also specify `:metadata_key`.
   * `:usable` - Matches streams with usable configuration, the codec must be defined and the essential information such as video dimension or audio sample rate must be present.
   """
-  @spec add_stream_specifier(command :: Command.t, opts :: Keyword.t) :: Command.t
+  @spec add_stream_specifier(command :: Command.t(), opts :: Keyword.t()) :: Command.t()
   def add_stream_specifier(%Command{files: [file | files]} = command, opts) do
     stream_specifier = struct(StreamSpecifier, opts)
     file = %File{file | stream_specifiers: [stream_specifier | file.stream_specifiers]}
@@ -94,7 +94,10 @@ defmodule FFmpex do
   @doc """
   Add a global option that applies to the entire command.
   """
-  def add_global_option(%Command{global_options: options} = command, %Option{contexts: contexts} = option) do
+  def add_global_option(
+        %Command{global_options: options} = command,
+        %Option{contexts: contexts} = option
+      ) do
     validate_contexts!(contexts, :global)
     %Command{command | global_options: [option | options]}
   end
@@ -103,7 +106,10 @@ defmodule FFmpex do
   Add a per-file option to the command.
   Applies to the most recently added file.
   """
-  def add_file_option(%Command{files: [file | files]} = command, %Option{contexts: contexts} = option) do
+  def add_file_option(
+        %Command{files: [file | files]} = command,
+        %Option{contexts: contexts} = option
+      ) do
     %{type: file_io_type} = file
     validate_contexts!(contexts, file_io_type)
 
@@ -115,12 +121,20 @@ defmodule FFmpex do
   Add a per-stream option to the command.
   Applies to the most recently added stream specifier, of the most recently added file.
   """
-  def add_stream_option(%Command{files: [file | files]} = command, %Option{contexts: contexts} = option) do
+  def add_stream_option(
+        %Command{files: [file | files]} = command,
+        %Option{contexts: contexts} = option
+      ) do
     %{type: file_io_type} = file
     validate_contexts!(contexts, file_io_type)
 
     %File{stream_specifiers: [stream_specifier | stream_specifiers]} = file
-    stream_specifier = %StreamSpecifier{stream_specifier | options: [option | stream_specifier.options]}
+
+    stream_specifier = %StreamSpecifier{
+      stream_specifier
+      | options: [option | stream_specifier.options]
+    }
+
     file = %File{file | stream_specifiers: [stream_specifier | stream_specifiers]}
     %Command{command | files: [file | files]}
   end
@@ -130,11 +144,12 @@ defmodule FFmpex do
 
   Returns `:ok` on success, or `{:error, {cmd_output, exit_status}}` on error.
   """
-  @spec execute(command :: Command.t) :: :ok | {:error, {Collectable.t, exit_status :: non_neg_integer}}
+  @spec execute(command :: Command.t()) ::
+          :ok | {:error, {Collectable.t(), exit_status :: non_neg_integer}}
   def execute(%Command{} = command) do
     {executable, cmd_args} = prepare(command)
 
-    case System.cmd executable, cmd_args, stderr_to_stdout: true do
+    case System.cmd(executable, cmd_args, stderr_to_stdout: true) do
       {_, 0} -> :ok
       error -> {:error, error}
     end
@@ -149,7 +164,7 @@ defmodule FFmpex do
 
   Returns `{ffmpeg_executable_path, list_of_args}`.
   """
-  @spec prepare(command :: Command.t) :: {binary(), list(binary)}
+  @spec prepare(command :: Command.t()) :: {binary(), list(binary)}
   def prepare(%Command{files: files, global_options: options}) do
     options = Enum.map(options, &arg_for_option/1)
     cmd_args = List.flatten([options, options_list(files)])
@@ -164,25 +179,29 @@ defmodule FFmpex do
 
   defp options_list(input_files, output_files, acc \\ [])
   defp options_list([], [], acc), do: List.flatten(acc)
+
   defp options_list(input_files, [output_file | output_files], acc) do
     acc = [File.command_arguments(output_file), output_file.path | acc]
     options_list(input_files, output_files, acc)
   end
+
   defp options_list([input_file | input_files], [], acc) do
     acc = [File.command_arguments(input_file), "-i", input_file.path | acc]
     options_list(input_files, [], acc)
   end
 
   defp arg_for_option(%Option{name: name, require_arg: false, argument: nil}) do
-    ~w(#{name})
+    [name]
   end
+
   defp arg_for_option(%Option{name: name, argument: arg}) when not is_nil(arg) do
-    ~w(#{name} #{arg})
+    [name, arg]
   end
 
   defp validate_contexts!(:unspecified, _), do: :ok
+
   defp validate_contexts!(contexts, required) when is_list(contexts) do
-    unless Enum.member?(contexts, required), do: raise ArgumentError
+    unless Enum.member?(contexts, required), do: raise(ArgumentError)
   end
 
   # Read ffmpeg path from config. If unspecified, assume `ffmpeg` is in env $PATH.
